@@ -1,0 +1,42 @@
+# 빌드 산출물 — 배포용으로 실제 쓰는 dist\ngii_downloader 한 세트만 git에 포함하고,
+# 남아있는 중복 빌드(_01~_05, 국토정보맵_다운로더)와 중간 캐시는 제외한다.
+dist/*
+!dist/ngii_downloader/
+!dist/ngii_downloader/**
+build/
+macro_tool/dist/
+macro_tool/build/
+변환_GO/dist/
+변환_GO/*.exe
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# 탐색/디버그용으로 저장했던 페이지 스냅샷·스크린샷 (소스코드 아님)
+*.png
+page_source.html
+국토정보플랫폼 국토정보맵.html
+국토정보플랫폼 국토정보맵_files/
+
+# 이전 버전 백업 (git 히스토리로 대체 가능)
+gui - 백업.py
+gui_backup_*.py
+
+# 코드와 무관한 발표자료
+프레젠테이션1.pptx
+slides_img/
+
+# Claude Code 로컬 설정 (개인 환경 설정, 공개 저장소에 넣을 필요 없음)
+.claude/
+
+# 별개의 사이드 프로젝트 (이 앱과 무관 — 같이 올리고 싶으면 이 두 줄을 지우면 됨)
+macro_tool/
+변환_GO/
+
+# 개발 초기 탐색/디버그용 1회성 스크립트 — gui.py로 대체되어 더 이상 쓰이지 않음
+# (지금도 실제로 쓰고 있다면 이 줄들을 지우고 올리면 됨)
+downloader.py
+explore_ui.py
+inspect_after_download_click.py
+inspect_download_popup.py
