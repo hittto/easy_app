@@ -8,6 +8,7 @@ macro_tool/dist/
 macro_tool/build/
 변환_GO/dist/
 변환_GO/*.exe
+dist/ngii_downloader/*.zip
 
 # 파이썬 캐시
 __pycache__/
