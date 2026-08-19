@@ -63,6 +63,11 @@ C_ERR       = "#E4113B"
 # 사용자 배율 (런타임에 변경 가능, 기본 100%)
 _USER_ZOOM = 1.0
 
+# 기본 창 크기 — 카테고리 세그먼트 컨트롤(5개)과 "추가 ▶" 버튼이 잘리지 않도록
+# 기존 1000px보다 가로를 넉넉하게 잡았다.
+WINDOW_W = 1180
+WINDOW_H = 1000
+
 # DPI × 사용자 배율 적용 폰트 크기
 def _fs(size: int) -> int:
     return max(1, round(size * _DPI_SCALE * _USER_ZOOM))
@@ -111,13 +116,21 @@ def find_chrome() -> str | None:
             return p
     return None
 
-CATEGORIES = ["인구", "건물", "토지", "국토지표"]
+CATEGORIES = ["인구", "건물", "토지", "국토지표", "국토모니터링"]
+
+# 세그먼트 컨트롤에 표시할 축약 라벨 — 실제 값(CATEGORIES/PANEL_IDS/사이트 버튼 텍스트
+# 매칭에 쓰는 문자열)은 그대로 두고, 화면에 그리는 텍스트만 짧게 바꾼다. 목록에 없는
+# 카테고리는 원래 이름 그대로 표시된다.
+CATEGORY_LABELS = {
+    "국토모니터링": "모니터링",
+}
 
 PANEL_IDS = {
-    "인구":     "statisticsPopulation",
-    "건물":     "statisticsBuilding",
-    "토지":     "statisticsLand",
-    "국토지표": "statisticsIndicator",
+    "인구":       "statisticsPopulation",
+    "건물":       "statisticsBuilding",
+    "토지":       "statisticsLand",
+    "국토지표":   "statisticsIndicator",
+    "국토모니터링": "statisticsMonitoring",
 }
 
 SIDO_LIST = [
@@ -145,12 +158,21 @@ CHAIN_EXCLUDE_SUFFIXES = ("_temp",)
 CHAIN_EXCLUDE_CONTAINS = ("dTypeList",)
 
 
-def is_chain_candidate(name: str) -> bool:
+# 국토모니터링 패널은 실제 사이트에서 확인한 결과, 시도/시군구(sido_text_area/
+# sgg_text_area)가 다른 카테고리처럼 처음부터 채워져 있는 게 아니라 year_text_area
+# (기준년도)를 먼저 선택해야만 채워진다 — 즉 이 카테고리에서는 기준년도가 "다운로드할
+# 기간 범위"가 아니라 분석자료 다음에 고르는 일반 체인 필드다. 그래서 이 카테고리에
+# 한해서만 year_text_area를 체인 제외 목록에서 빼준다.
+CHAIN_INCLUDE_YEAR_CATEGORIES = {"국토모니터링"}
+
+
+def is_chain_candidate(name: str, category: str = None) -> bool:
     """select name이 데이터 체인(분류/자료유형/항목 등) 후보인지 판별."""
     if not name:
         return False
     if name in CHAIN_EXCLUDE_NAMES:
-        return False
+        if not (name == "year_text_area" and category in CHAIN_INCLUDE_YEAR_CATEGORIES):
+            return False
     if any(name.endswith(suf) for suf in CHAIN_EXCLUDE_SUFFIXES):
         return False
     if any(sub in name for sub in CHAIN_EXCLUDE_CONTAINS):
@@ -418,7 +440,7 @@ class NgiiDownloaderGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("국토정보맵 자동 다운로더")
-        self.root.geometry(f"{int(1000*_DPI_SCALE)}x{int(1000*_DPI_SCALE)}")
+        self.root.geometry(f"{int(WINDOW_W*_DPI_SCALE)}x{int(WINDOW_H*_DPI_SCALE)}")
         self.root.resizable(True, True)
 
         self.log_queue: queue.Queue = queue.Queue()
@@ -510,16 +532,17 @@ class NgiiDownloaderGUI:
               background=[("active", C_FG3)])
 
         # 세그먼트 컨트롤(카테고리 선택)용 스타일 — 선택/비선택 두 상태
+        s.configure("SegBg.TFrame", background=C_BORDER)
         s.configure("SegOn.TButton",
                     background=C_ACC, foreground="#FFFFFF",
                     font=FONT_B, borderwidth=0, focuscolor=C_ACC,
-                    padding=(10, 5))
+                    padding=(8, 5))
         s.map("SegOn.TButton",
               background=[("active", C_ACC_H)])
         s.configure("SegOff.TButton",
                     background=C_CARD, foreground=C_FG2,
                     font=FONT, borderwidth=0, focuscolor=C_CARD,
-                    padding=(10, 5))
+                    padding=(8, 5))
         s.map("SegOff.TButton",
               background=[("active", C_DIVIDER)],
               foreground=[("active", C_FG)])
@@ -598,7 +621,7 @@ class NgiiDownloaderGUI:
                           values=zoom_values, state="readonly", width=6)
         cb.pack(side="left")
 
-        ttk.Label(toolbar, text="ver. 0.6", style="Bg.TLabel").pack(
+        ttk.Label(toolbar, text="ver. 0.8", style="Bg.TLabel").pack(
             side="left", padx=(14, 0))
 
         # 헤더와 본문을 가르는 hairline 구분선 (HIG separatorColor)
@@ -651,8 +674,8 @@ class NgiiDownloaderGUI:
                 pass
 
         # 창 크기 비례 조정
-        w = int(1000 * _DPI_SCALE * _USER_ZOOM)
-        h = int(1000 * _DPI_SCALE * _USER_ZOOM)
+        w = int(WINDOW_W * _DPI_SCALE * _USER_ZOOM)
+        h = int(WINDOW_H * _DPI_SCALE * _USER_ZOOM)
         self.root.geometry(f"{w}x{h}")
 
     # ── 연결 프레임 ──────────────────────────────────────────────────────────
@@ -695,22 +718,27 @@ class NgiiDownloaderGUI:
         frm.columnconfigure(1, weight=1)
         self._data_frm = frm
 
-        # 카테고리 선택 — HIG Segmented Control: 상호 배타적인 소수 옵션(4개)에는
+        # 카테고리 선택 — HIG Segmented Control: 상호 배타적인 소수 옵션(CATEGORIES 목록,
+        # 현재 5개)에는
         # Combobox보다 세그먼트 컨트롤이 더 즉각적으로 현재 선택을 드러낸다.
         ttk.Label(frm, text="분류", style="Muted.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 8))
         self.cat_var = tk.StringVar(value="건물")
         self._cat_seg_btns = {}
-        seg = ttk.Frame(frm, style="Card.TFrame")
+        # 세그먼트 배경을 hairline 구분선 색으로 깔고, 버튼 사이 1px 간격으로 그 색이
+        # 비쳐 보이게 해서 선택되지 않은 세그먼트끼리도 경계가 흐릿하게나마 구분되게 한다
+        # (이전에는 프레임과 비선택 버튼 배경이 같은 색이라 경계가 전혀 안 보였다).
+        seg = ttk.Frame(frm, style="SegBg.TFrame")
         seg.grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=(0, 8))
         for i, cat in enumerate(CATEGORIES):
             seg.columnconfigure(i, weight=1)
-            b = ttk.Button(seg, text=cat, style="SegOff.TButton",
+            b = ttk.Button(seg, text=CATEGORY_LABELS.get(cat, cat), style="SegOff.TButton",
                            command=lambda c=cat: self.cat_var.set(c))
-            b.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 1, 0))
+            b.grid(row=0, column=i, sticky="ew", padx=1, pady=1)
             self._cat_seg_btns[cat] = b
         self._refresh_cat_seg()
-        self.cat_var.trace_add("write", lambda *_: self._refresh_cat_seg())
+        self.cat_var.trace_add(
+            "write", lambda *_: (self._refresh_cat_seg(), self._refresh_period_enabled()))
 
         tk.Frame(frm, bg=C_DIVIDER, height=1).grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
@@ -742,6 +770,28 @@ class NgiiDownloaderGUI:
                 b.configure(style="SegOn.TButton" if cat == current else "SegOff.TButton")
             except tk.TclError:
                 pass
+
+    def _category_supports_run(self) -> bool:
+        """현재 카테고리가 '기간 및 실행'(범위 다운로드)을 지원하는지.
+        국토모니터링처럼 기준년도가 범위가 아니라 체인 필드로 단일 선택되는
+        카테고리는 이 도구의 기간 반복 다운로드 방식과 맞지 않아 실행을 막는다."""
+        return self.cat_var.get() not in CHAIN_INCLUDE_YEAR_CATEGORIES
+
+    def _refresh_period_enabled(self):
+        """카테고리 전환에 따라 '기간 및 실행' 입력을 켜고 끈다."""
+        if not hasattr(self, "sy_cb"):
+            return   # 아직 기간 프레임이 만들어지기 전(초기 구성 중)
+        enabled = self._category_supports_run()
+        combo_state = "readonly" if enabled else "disabled"
+        self.sy_cb.configure(state=combo_state)
+        self.ey_cb.configure(state=combo_state)
+        if not enabled:
+            self.sy_var.set("")
+            self.ey_var.set("")
+            self.lbl_progress.configure(text="- / -")
+        else:
+            self.lbl_progress.configure(text="0 / 0")
+        self._set_run_state(self.is_running)
 
     def _get_chain_var(self, sel_name: str) -> tk.StringVar:
         """select_name에 대응하는 StringVar을 가져오거나 새로 만든다.
@@ -832,8 +882,6 @@ class NgiiDownloaderGUI:
         ttk.Label(hdr, text="작업 지역 목록", style="Muted.TLabel").pack(side="left")
         self.region_count_lbl = ttk.Label(hdr, text="0개", style="Small.TLabel")
         self.region_count_lbl.pack(side="left", padx=(6, 0))
-        self._mk_btn(hdr, "제거", self.cmd_remove_region,
-                     "secondary").pack(side="right")
 
         reg_box = ttk.Frame(frm, style="Card.TFrame")
         reg_box.grid(row=6, column=0, columnspan=2, sticky="nsew")
@@ -848,6 +896,20 @@ class NgiiDownloaderGUI:
         self.region_lb.configure(yscrollcommand=reg_scroll.set)
         self.region_lb.grid(row=0, column=0, sticky="nsew")
         reg_scroll.grid(row=0, column=1, sticky="ns")
+
+        # 시군구 목록과 동일한 패턴 — 전체선택/전체해제는 왼쪽, 제거(파괴적 동작)는
+        # 오른쪽. 이전에는 "제거"만 목록 위 헤더에 단독으로 있어 성격이 다른
+        # 전체선택/전체해제와 짝이 안 맞았다.
+        reg_btn_row = ttk.Frame(frm, style="Card.TFrame")
+        reg_btn_row.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._mk_btn(reg_btn_row, "전체선택",
+                     lambda: self.region_lb.selection_set(0, tk.END),
+                     "secondary").pack(side="left", padx=(0, 4))
+        self._mk_btn(reg_btn_row, "전체해제",
+                     lambda: self.region_lb.selection_clear(0, tk.END),
+                     "secondary").pack(side="left")
+        self._mk_btn(reg_btn_row, "제거", self.cmd_remove_region,
+                     "secondary").pack(side="right")
 
     # ── 기간 + 실행 프레임 ────────────────────────────────────────────────────
 
@@ -1007,9 +1069,10 @@ class NgiiDownloaderGUI:
 
     def _set_run_state(self, running: bool):
         self.is_running = running
+        can_run = (not running) and self._category_supports_run()
         self.btn_run.configure(
-            state="disabled" if running else "normal",
-            bg=C_DIVIDER if running else C_SUCCESS)
+            state="normal" if can_run else "disabled",
+            bg=C_SUCCESS if can_run else C_DIVIDER)
         self.btn_stop.configure(
             state="normal" if running else "disabled",
             bg=C_DANGER if running else C_DIVIDER)
@@ -1162,7 +1225,7 @@ class NgiiDownloaderGUI:
         self.map_page = page
         self.root.after(0, lambda: (
             self.lbl_status.configure(text="● 연결됨", fg=C_OK),
-            self.btn_run.configure(state="normal", bg=C_SUCCESS),
+            self._set_run_state(False),
             self.log(f"✅ 연결 성공: {page.url}"),
         ))
 
@@ -1185,7 +1248,8 @@ class NgiiDownloaderGUI:
             n += 1
         return f"{label} ({n})"
 
-    async def _discover_chain_steps(self, page, panel_sel, chain_timeout, processed: set) -> bool:
+    async def _discover_chain_steps(self, page, panel_sel, chain_timeout, processed: set,
+                                     category: str = None) -> bool:
         """패널 DOM을 반복적으로 다시 스캔하면서, 아직 처리하지 않은 체인 select를
         발견되는 순서대로 하나씩 값을 채워 넣는다 (self._data_chain / self._chain_vmaps 갱신).
 
@@ -1200,7 +1264,7 @@ class NgiiDownloaderGUI:
             scan = await get_panel_select_names(page, panel_sel)
             next_item = None
             for name, placeholder in scan:
-                if not is_chain_candidate(name) or name in processed:
+                if not is_chain_candidate(name, category) or name in processed:
                     continue
                 next_item = (name, placeholder)
                 break
@@ -1264,21 +1328,28 @@ class NgiiDownloaderGUI:
         self._chain_vmaps = {}
         self.root.after(0, lambda: self._apply_chain([]))
 
-        period_ok = await self._discover_chain_steps(page, panel_sel, chain_timeout, set())
+        period_ok = await self._discover_chain_steps(page, panel_sel, chain_timeout, set(), cat)
         if not self._data_chain:
             self.log("  ⚠ 데이터 체인을 하나도 찾지 못했습니다 — 사이트 구조가 크게 바뀌었을 수 있습니다.")
 
-        # 체인 끝난 후 year_text_area(기간) 로드 — 항상 시도 (중간에 타임아웃이 있었어도)
-        # (대기 + 읽기를 왕복 1회로 처리, 값은 변경하지 않음)
-        year_tv = await wait_read_and_advance(
-            page, panel_sel, "year_text_area", min_count=1, timeout_sec=chain_timeout, advance=False)
-        if year_tv is None:
-            self.log("  ⚠ 기간 옵션 로드 시간 초과")
+        if cat in CHAIN_INCLUDE_YEAR_CATEGORIES:
+            # 이 카테고리는 기준년도가 위 체인에서 이미 단일 값으로 선택됐고, 다운로드
+            # 기간 "범위" 개념 자체가 없어 하단 기간 및 실행 입력을 비활성화해둔다
+            # (cat_var 트레이스 → _refresh_period_enabled 가 처리).
+            self.log("  ℹ 이 카테고리는 기준년도를 데이터 설정에서 직접 선택합니다 "
+                     "(기간 및 실행은 비활성화됩니다).")
         else:
-            period_opts = [o["v"] for o in year_tv]
-            self.log(f"  기간: {len(period_opts)}개 ({period_opts[0] if period_opts else '-'} ~ "
-                     f"{period_opts[-1] if period_opts else '-'})")
-            self.root.after(0, lambda o=period_opts: self._update_period_combos(o))
+            # 체인 끝난 후 year_text_area(기간) 로드 — 항상 시도 (중간에 타임아웃이 있었어도)
+            # (대기 + 읽기를 왕복 1회로 처리, 값은 변경하지 않음)
+            year_tv = await wait_read_and_advance(
+                page, panel_sel, "year_text_area", min_count=1, timeout_sec=chain_timeout, advance=False)
+            if year_tv is None:
+                self.log("  ⚠ 기간 옵션 로드 시간 초과")
+            else:
+                period_opts = [o["v"] for o in year_tv]
+                self.log(f"  기간: {len(period_opts)}개 ({period_opts[0] if period_opts else '-'} ~ "
+                         f"{period_opts[-1] if period_opts else '-'})")
+                self.root.after(0, lambda o=period_opts: self._update_period_combos(o))
 
         self.log("✅ 옵션 로드 완료" if period_ok else "⚠ 옵션 로드 일부 시간 초과 (로그 확인)")
 
@@ -1311,7 +1382,8 @@ class NgiiDownloaderGUI:
 
         self._loading_options = True
         try:
-            chain_timeout = 60 if self.cat_var.get() == "국토지표" else 15
+            cat = self.cat_var.get()
+            chain_timeout = 60 if cat == "국토지표" else 15
 
             actual_val = self._chain_vmaps.get(changed_sel_name, {}).get(display_val, display_val)
             await jq_set(page, panel_sel, changed_sel_name, actual_val)
@@ -1331,17 +1403,19 @@ class NgiiDownloaderGUI:
             # 계속 자동 탐지 — processed에 기존 필드를 모두 넣어두면 새 필드가 없는 한
             # 화면을 건드리지 않고 즉시 반환된다.
             processed = {sn for _, sn in chain}
-            await self._discover_chain_steps(page, panel_sel, chain_timeout, processed)
+            await self._discover_chain_steps(page, panel_sel, chain_timeout, processed, cat)
 
-            # 기간(year_text_area) 자동 갱신 (대기 + 읽기 왕복 1회)
-            year_tv = await wait_read_and_advance(
-                page, panel_sel, "year_text_area", min_count=1, timeout_sec=chain_timeout, advance=False)
-            if year_tv is None:
-                self.log(f"  ⚠ [{changed_sel_name} 변경] 기간 로드 시간 초과")
-            else:
-                period_opts = [o["v"] for o in year_tv]
-                self.log(f"  기간 갱신: {len(period_opts)}개")
-                self.root.after(0, lambda o=period_opts: self._update_period_combos(o))
+            if cat not in CHAIN_INCLUDE_YEAR_CATEGORIES:
+                # 기간(year_text_area) 자동 갱신 (대기 + 읽기 왕복 1회) — 이 카테고리에서는
+                # year_text_area가 이미 체인 필드로 처리되므로 별도 기간 범위 갱신이 불필요.
+                year_tv = await wait_read_and_advance(
+                    page, panel_sel, "year_text_area", min_count=1, timeout_sec=chain_timeout, advance=False)
+                if year_tv is None:
+                    self.log(f"  ⚠ [{changed_sel_name} 변경] 기간 로드 시간 초과")
+                else:
+                    period_opts = [o["v"] for o in year_tv]
+                    self.log(f"  기간 갱신: {len(period_opts)}개")
+                    self.root.after(0, lambda o=period_opts: self._update_period_combos(o))
         finally:
             self._loading_options = False
 
@@ -1361,13 +1435,12 @@ class NgiiDownloaderGUI:
             self.log(f"  ⚠ 시군구 로드 실패: {sido}")
 
     def _fill_sgg_lb(self, opts: list):
+        # "OO 시군구 전체" 항목을 예전에는 필터링했었는데, 실제 다운로드 실행 시에는
+        # 이 항목이 시군구 단위 반복이 아니라 시도 단위로 한 번에 조회되는 경로라
+        # 세밀한 해상도(예: 100M)처럼 시군구 단위 조회 자체가 안 되는 자료도
+        # "시군구 전체"로는 정상적으로 받아진다. 그래서 다시 노출한다.
         self.sgg_lb.delete(0, tk.END)
         for o in opts:
-            # "OO 시군구 전체" 항목 제외 — 이걸 선택하면 시군구 필터 없이
-            # 전국 데이터가 나오는 사이트 동작이 있고, 어차피 "전체선택" 버튼으로
-            # 개별 시군구를 모두 선택할 수 있어 불필요하다.
-            if "전체" in o:
-                continue
             self.sgg_lb.insert(tk.END, o)
 
     # ── 메인 다운로드 루프 ──────────────────────────────────────────────────
@@ -1633,11 +1706,21 @@ class NgiiDownloaderGUI:
                     if popup is None:
                         raise Exception("파일트리 팝업 열기 실패")
 
-                    await popup.wait_for_load_state('load', timeout=30_000)
+                    try:
+                        await popup.wait_for_load_state('load', timeout=60_000)
+                    except Exception:
+                        pass  # load 타임아웃 무시 (대용량 시도 단위 조회 시 오래 걸릴 수 있음)
                     try:
                         await popup.wait_for_load_state('networkidle', timeout=20_000)
                     except Exception:
                         pass  # networkidle 타임아웃 무시 (다운로드 중일 수 있음)
+
+                    # 실제 파일트리 항목이 DOM에 나타날 때까지 별도 대기
+                    # (load/networkidle 이벤트와 무관하게, 대용량 목록은 렌더링이 더 늦게 끝날 수 있음)
+                    await wait_for_element_js(
+                        popup,
+                        "document.querySelectorAll('div.irx-file-inner-wrapper').length > 0",
+                        timeout_sec=60)
                     self.log("    파일트리 팝업 로드 완료")
 
                     # Step 5: .zip 항목 체크
