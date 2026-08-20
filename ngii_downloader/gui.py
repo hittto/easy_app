@@ -549,9 +549,6 @@ class NgiiDownloaderGUI:
 
         self.log_queue: queue.Queue = queue.Queue()
         self.stop_event = threading.Event()
-        # set() 이면 일시정지 상태 — 실행 루프가 "항목 경계"에서만 이 값을 본다
-        # (다운로드 1건의 중간에 멈추면 사이트 모달이 열린 채 방치되기 때문).
-        self.pause_event = threading.Event()
 
         self.playwright_obj = None
         self.browser = None
@@ -662,9 +659,12 @@ class NgiiDownloaderGUI:
         s.configure("Card.TFrame", background=C_CARD)
 
         # 그룹(섹션) 컨테이너 — 옅은 hairline 구분선 하나로만 경계를 표시
+        # labelmargins = (좌, 상, 우, 하) — 카드 제목이 테두리 왼쪽 위 모서리에
+        # 딱 붙어 보이지 않도록 안쪽으로 들여쓰고 아래 간격도 준다.
         s.configure("TLabelframe",
                     background=C_CARD, relief="flat",
-                    borderwidth=1, bordercolor=C_BORDER)
+                    borderwidth=1, bordercolor=C_BORDER,
+                    labelmargins=(_fs(10), _fs(2), 0, _fs(6)))
         s.configure("TLabelframe.Label",
                     background=C_CARD, foreground=C_FG,   # Headline: 중립색 (accent 남용 금지)
                     font=FONT_TITLE)
@@ -783,7 +783,7 @@ class NgiiDownloaderGUI:
 
     def _make_zoom_header(self, row):
         frm = ttk.Frame(self.root, style="TFrame")
-        frm.grid(row=row, column=0, sticky="ew", padx=16, pady=(14, 8))
+        frm.grid(row=row, column=0, sticky="ew", padx=22, pady=(18, 8))
         frm.columnconfigure(1, weight=1)
 
         self.lbl_title = tk.Label(frm, text="국토정보맵 자동 다운로더",
@@ -844,6 +844,8 @@ class NgiiDownloaderGUI:
             ("lbl_title",    FONT_LARGETITLE),
             ("lbl_status",   FONT_B),
             ("lbl_progress", FONT),
+            ("lbl_ok",       FONT_B),
+            ("lbl_ng",       FONT_B),
             ("sgg_lb",       FONT),
             ("region_lb",    FONT),
             ("data_lb",      FONT),
@@ -861,7 +863,7 @@ class NgiiDownloaderGUI:
 
     def _make_conn_frame(self, row):
         frm = ttk.LabelFrame(self.root, text="Chrome 연결", padding=(16, 12))
-        frm.grid(row=row, column=0, sticky="ew", padx=16, pady=(8, 6))
+        frm.grid(row=row, column=0, sticky="ew", padx=22, pady=(10, 8))
         frm.columnconfigure(1, weight=1)
 
         ttk.Label(frm, text="CDP URL", style="Muted.TLabel").grid(
@@ -877,18 +879,11 @@ class NgiiDownloaderGUI:
                                    bg=C_CARD, fg=C_ERR, font=FONT_B)
         self.lbl_status.grid(row=0, column=3)
 
-        # 포트 충돌은 이 도구에서 가장 흔한 연결 실패 원인이라 입력창 바로 아래에 적어 둔다.
-        ttk.Label(frm,
-                  text="※ 포트 번호만 적어도 됩니다. 그 포트가 이미 쓰이고 있으면 "
-                       "다른 번호(예: 9333)로 바꾸세요 — Chrome도 그 포트로 실행됩니다.",
-                  style="Small.TLabel").grid(
-            row=1, column=0, columnspan=4, sticky="w", pady=(8, 0))
-
     # ── 중간 프레임 ──────────────────────────────────────────────────────────
 
     def _make_middle_frame(self, row):
         outer = ttk.Frame(self.root)
-        outer.grid(row=row, column=0, sticky="nsew", padx=14, pady=6)
+        outer.grid(row=row, column=0, sticky="nsew", padx=20, pady=8)
         outer.columnconfigure(0, weight=1)
         outer.columnconfigure(1, weight=2)
 
@@ -965,17 +960,13 @@ class NgiiDownloaderGUI:
         self.ey_cb.grid(row=0, column=2, sticky="ew")
         self._period_options: list = []
 
-        ttk.Label(frm, text="※ 기간은 [추가 ▼] 시 항목에 함께 저장됩니다",
-                  style="Small.TLabel").grid(
-            row=5, column=1, sticky="w", padx=(10, 0), pady=(0, 4))
-
         tk.Frame(frm, bg=C_DIVIDER, height=1).grid(
-            row=6, column=0, columnspan=2, sticky="ew", pady=(4, 6))
+            row=5, column=0, columnspan=2, sticky="ew", pady=(8, 6))
 
         # 옵션 불러오기 + 추가 — 지역 선택 패널과 같은 패턴(왼쪽 준비 동작,
         # 오른쪽 목록 담기)으로 맞춰 두 패널의 조작 방식을 통일한다.
         act_row = ttk.Frame(frm, style="Card.TFrame")
-        act_row.grid(row=7, column=0, columnspan=2, sticky="ew")
+        act_row.grid(row=6, column=0, columnspan=2, sticky="ew")
         act_row.columnconfigure(0, weight=1)
         self._mk_btn(act_row, "옵션 불러오기", self.cmd_load_data_options,
                      "secondary").grid(row=0, column=0, sticky="ew", padx=(0, 4))
@@ -983,23 +974,23 @@ class NgiiDownloaderGUI:
                      "primary").grid(row=0, column=1, sticky="e")
 
         tk.Frame(frm, bg=C_DIVIDER, height=1).grid(
-            row=8, column=0, columnspan=2, sticky="ew", pady=(8, 6))
+            row=7, column=0, columnspan=2, sticky="ew", pady=(8, 6))
 
         # ── 작업 데이터 목록 ─────────────────────────────────────────────────
         # 데이터 설정을 하나만 쓰지 않고 여러 조합(분류·체인·기간)을 쌓아 두었다가
         # 한 번의 실행으로 순서대로 처리한다. 기간은 항목마다 따로 저장되므로
         # 자료별로 제공 기간이 달라도 안전하다.
         dhdr = ttk.Frame(frm, style="Card.TFrame")
-        dhdr.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(0, 3))
+        dhdr.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 3))
         ttk.Label(dhdr, text="작업 데이터 목록", style="Muted.TLabel").pack(side="left")
         self.data_count_lbl = ttk.Label(dhdr, text="0개", style="Small.TLabel")
         self.data_count_lbl.pack(side="left", padx=(6, 0))
 
         data_box = ttk.Frame(frm, style="Card.TFrame")
-        data_box.grid(row=10, column=0, columnspan=2, sticky="nsew")
+        data_box.grid(row=9, column=0, columnspan=2, sticky="nsew")
         data_box.columnconfigure(0, weight=1)
         data_box.rowconfigure(0, weight=1)
-        frm.rowconfigure(10, weight=1)
+        frm.rowconfigure(9, weight=1)
         self.data_lb = tk.Listbox(
             data_box, selectmode=tk.EXTENDED, height=DATA_LINES, exportselection=False,
             bg=C_ENTRY, fg=C_FG, font=FONT,
@@ -1018,7 +1009,7 @@ class NgiiDownloaderGUI:
         data_xscroll.grid(row=1, column=0, sticky="ew")
 
         data_btn_row = ttk.Frame(frm, style="Card.TFrame")
-        data_btn_row.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        data_btn_row.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         self._mk_btn(data_btn_row, "전체선택",
                      lambda: self.data_lb.selection_set(0, tk.END),
                      "secondary").pack(side="left", padx=(0, 4))
@@ -1174,43 +1165,48 @@ class NgiiDownloaderGUI:
         self._mk_btn(reg_btn_row, "제거", self.cmd_remove_region,
                      "secondary").pack(side="right")
 
-    # ── 기간 + 실행 프레임 ────────────────────────────────────────────────────
+    # ── 실행 프레임 ──────────────────────────────────────────────────────────
 
     def _make_period_ctrl_frame(self, row):
-        """실행 프레임 — 기간 선택은 데이터 설정 패널로 옮겼고, 여기에는
-        진행 상황과 실행/일시정지/중지만 남는다."""
+        """실행 프레임 — 왼쪽부터 진행 카운터·진행 바, 그다음 성공/실패 집계,
+        오른쪽 끝에 중지/실행 버튼."""
         frm = ttk.LabelFrame(self.root, text="실행", padding=(16, 12))
-        frm.grid(row=row, column=0, sticky="ew", padx=16, pady=6)
-        frm.columnconfigure(0, weight=1)
+        frm.grid(row=row, column=0, sticky="ew", padx=22, pady=8)
+        frm.columnconfigure(1, weight=1)      # 진행 바가 남는 폭을 모두 차지
 
-        ttk.Label(frm,
-                  text="작업 데이터 목록 × 작업 지역 목록 전체를 순서대로 처리합니다.",
-                  style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-
-        run_area = ttk.Frame(frm)
-        run_area.grid(row=0, column=1, sticky="e")
-
-        self.lbl_progress = tk.Label(run_area, text="0 / 0",
-                                      bg=C_BG, fg=C_FG2, font=FONT, width=8)
-        self.lbl_progress.pack(side="left", padx=(0, 8))
+        self.lbl_progress = tk.Label(frm, text="0 / 0", anchor="w",
+                                     bg=C_CARD, fg=C_FG2, font=FONT, width=9)
+        self.lbl_progress.grid(row=0, column=0, sticky="w", padx=(0, 10))
 
         self.progress_var = tk.DoubleVar()
-        ttk.Progressbar(run_area, variable=self.progress_var,
-                        maximum=100, length=150).pack(side="left", padx=(0, 10))
+        ttk.Progressbar(frm, variable=self.progress_var, maximum=100).grid(
+            row=0, column=1, sticky="ew", padx=(0, 18))
 
-        # 일시정지 ↔ 재개 토글 — 같은 버튼의 라벨/색만 바뀐다
-        # (_refresh_pause_btn 참고). 실행 중이 아닐 때는 비활성.
-        self.btn_pause = self._mk_btn(run_area, "⏸  일시정지", self.cmd_pause,
-                                      "secondary", state="disabled")
-        self.btn_pause.pack(side="left", padx=(0, 4))
+        # 진행 바와 버튼 사이 — 실행 중 계속 갱신되는 성공/실패 집계
+        stat = ttk.Frame(frm, style="Card.TFrame")
+        stat.grid(row=0, column=2, sticky="e", padx=(0, 18))
+        self.lbl_ok = tk.Label(stat, text="성공 0", bg=C_CARD, fg=C_OK, font=FONT_B)
+        self.lbl_ok.pack(side="left", padx=(0, 12))
+        self.lbl_ng = tk.Label(stat, text="실패 0", bg=C_CARD, fg=C_FG3, font=FONT_B)
+        self.lbl_ng.pack(side="left")
 
-        self.btn_stop = self._mk_btn(run_area, "■  중지", self.cmd_stop,
-                                      "danger", state="disabled")
+        btns = ttk.Frame(frm, style="Card.TFrame")
+        btns.grid(row=0, column=3, sticky="e")
+        self.btn_stop = self._mk_btn(btns, "■  중지", self.cmd_stop,
+                                     "danger", state="disabled")
         self.btn_stop.pack(side="left", padx=(0, 4))
-
-        self.btn_run = self._mk_btn(run_area, "▶  실행", self.cmd_run,
-                                     "success", state="disabled")
+        self.btn_run = self._mk_btn(btns, "▶  실행", self.cmd_run,
+                                    "success", state="disabled")
         self.btn_run.pack(side="left")
+
+    def _set_stats(self, ok: int, ng: int):
+        """성공/실패 집계 갱신. 실패가 0이면 회색으로 눌러 두고, 1건이라도 생기면
+        경고색으로 바꿔 눈에 띄게 한다."""
+        try:
+            self.lbl_ok.configure(text=f"성공 {ok}")
+            self.lbl_ng.configure(text=f"실패 {ng}", fg=C_ERR if ng else C_FG3)
+        except (AttributeError, tk.TclError):
+            pass
 
     def _update_period_combos(self, opts: list):
         """year_text_area 옵션으로 기간 콤보박스 갱신."""
@@ -1241,7 +1237,7 @@ class NgiiDownloaderGUI:
 
     def _make_log_frame(self, row):
         frm = ttk.LabelFrame(self.root, text="실행 로그", padding=(16, 12))
-        frm.grid(row=row, column=0, sticky="nsew", padx=16, pady=(6, 16))
+        frm.grid(row=row, column=0, sticky="nsew", padx=22, pady=(8, 18))
         frm.columnconfigure(0, weight=1)
         frm.rowconfigure(0, weight=1)
         self.root.rowconfigure(row, weight=1)
@@ -1335,30 +1331,6 @@ class NgiiDownloaderGUI:
         self.btn_stop.configure(
             state="normal" if running else "disabled",
             bg=C_DANGER if running else C_DIVIDER)
-        if not running:
-            self.pause_event.clear()
-        self._refresh_pause_btn()
-
-    def _refresh_pause_btn(self):
-        """일시정지 버튼의 라벨·색을 현재 상태에 맞춘다.
-        일시정지 중에는 [▶ 재개]로 바뀌고 강조색을 입어, 지금 멈춰 있다는 사실이
-        버튼 하나만 봐도 드러나게 한다."""
-        if not hasattr(self, "btn_pause"):
-            return
-        if not self.is_running:
-            self.btn_pause.configure(text="⏸  일시정지", state="disabled",
-                                     bg=C_DIVIDER, fg=C_FG3,
-                                     activebackground=C_DIVIDER)
-        elif self.pause_event.is_set():
-            self.btn_pause.configure(text="▶  재개", state="normal",
-                                     bg=C_ACC, fg="#FFFFFF",
-                                     activebackground=C_ACC_H,
-                                     activeforeground="#FFFFFF")
-        else:
-            self.btn_pause.configure(text="⏸  일시정지", state="normal",
-                                     bg=C_ENTRY, fg=C_FG,
-                                     activebackground=C_DIVIDER,
-                                     activeforeground=C_FG)
 
     # ────────────────────────────── 명령 ─────────────────────────────────────
 
@@ -1498,29 +1470,11 @@ class NgiiDownloaderGUI:
             "regions": regions,
         }
         self.stop_event.clear()
-        self.pause_event.clear()
         self.root.after(0, lambda: self._set_run_state(True))
         self._run_bg(self._async_run(cfg))
 
-    def cmd_pause(self):
-        """일시정지 ↔ 재개 토글. 실제 멈춤은 실행 루프가 항목 경계에 도달했을 때
-        일어나므로, 진행 중이던 1건은 끝까지 마친 뒤 멈춘다."""
-        if not self.is_running:
-            return
-        if self.pause_event.is_set():
-            self.pause_event.clear()
-            self.log("▶ 재개 요청됨")
-        else:
-            self.pause_event.set()
-            self.log("⏸ 일시정지 요청됨 — 진행 중인 1건을 마친 뒤 멈춥니다")
-        self._refresh_pause_btn()
-
     def cmd_stop(self):
-        # 일시정지 상태에서도 중지가 먹히도록 pause를 먼저 푼다
-        # (_wait_while_paused 는 stop_event 도 함께 보므로 즉시 빠져나온다).
-        self.pause_event.clear()
         self.stop_event.set()
-        self._refresh_pause_btn()
         self.log("⏹ 중지 요청됨...")
 
     # ────────────────────────────── 비동기 함수 ──────────────────────────────
@@ -2142,22 +2096,6 @@ class NgiiDownloaderGUI:
                 if not ok:
                     self.log(f"  ⚠ {next_label} 로드 시간 초과, 계속 진행")
 
-    async def _wait_while_paused(self):
-        """일시정지 상태면 재개(또는 중지)될 때까지 기다린다.
-
-        다운로드 1건(_download_one) 한가운데가 아니라 항목·지역·시도 경계에서만
-        호출한다 — 모달이나 파일트리 팝업이 열린 채로 오래 방치되면 사이트 세션이
-        만료돼 재개했을 때 실패하기 때문이다."""
-        if not self.pause_event.is_set():
-            return
-        self.log("⏸ 일시정지됨 — [재개]를 누르면 이어서 진행합니다")
-        while self.pause_event.is_set() and not self.stop_event.is_set():
-            await asyncio.sleep(0.2)
-        if self.stop_event.is_set():
-            self.log("⏹ 일시정지 상태에서 중지됨")
-        else:
-            self.log("▶ 재개됨")
-
     async def _async_run(self, cfg: dict):
         page = self.map_page
 
@@ -2184,20 +2122,24 @@ class NgiiDownloaderGUI:
         self.root.after(0, lambda t=total: (
             self.progress_var.set(0),
             self.lbl_progress.configure(text=f"0 / {t}"),
+            self._set_stats(0, 0),
         ))
 
         def _bump(n=1):
-            """진행 카운터 갱신 (성공/실패/스킵 모두 여기서 1건으로 집계)."""
+            """진행 카운터 + 성공/실패 집계 갱신.
+            (성공/실패/스킵 모두 여기서 1건으로 센다. 호출 전에 failed 를 먼저
+            갱신해 두어야 집계가 어긋나지 않는다.)"""
             nonlocal done
             done += n
             pct = done / total * 100 if total else 0
-            self.root.after(0, lambda p=pct, d=done, t=total: (
+            self.root.after(0, lambda p=pct, d=done, t=total,
+                                   o=done - failed, g=failed: (
                 self.progress_var.set(p),
                 self.lbl_progress.configure(text=f"{d} / {t}"),
+                self._set_stats(o, g),
             ))
 
         for idx_item, item in enumerate(items, 1):
-            await self._wait_while_paused()
             if self.stop_event.is_set():
                 self.log("⏹ 중지됨")
                 break
@@ -2252,7 +2194,6 @@ class NgiiDownloaderGUI:
 
             # ── 지역 루프 ─────────────────────────────────────────────────────
             for sido, sigungu in regions:
-                await self._wait_while_paused()
                 if self.stop_event.is_set():
                     break   # 바깥 데이터 항목 루프에서 한 번만 로그를 남긴다
                 self.log(f"\n📍 {sido} {sigungu}")
@@ -2260,7 +2201,6 @@ class NgiiDownloaderGUI:
                 # ── 시도/시군구는 지역당 한 번만 설정 (여기도 최대 3회 재시도) ──
                 region_err = None
                 for attempt in range(1, MAX_ATTEMPTS + 1):
-                    await self._wait_while_paused()
                     if self.stop_event.is_set():
                         region_err = Exception("중지 요청으로 중단")
                         break
@@ -2296,7 +2236,6 @@ class NgiiDownloaderGUI:
                     continue
 
                 for period_val in periods:
-                    await self._wait_while_paused()
                     if self.stop_event.is_set():
                         break
 
@@ -2306,7 +2245,6 @@ class NgiiDownloaderGUI:
                     # ── 실패 시 최대 MAX_ATTEMPTS회까지 재시도 ────────────────
                     last_err = None
                     for attempt in range(1, MAX_ATTEMPTS + 1):
-                        await self._wait_while_paused()
                         if self.stop_event.is_set():
                             last_err = Exception("중지 요청으로 중단")
                             break
@@ -2324,11 +2262,12 @@ class NgiiDownloaderGUI:
                                 # 사이트가 직전 요청을 정리할 시간을 주고 재시도
                                 await asyncio.sleep(RETRY_DELAY_SEC * attempt)
 
+                    if last_err is not None:
+                        failed += 1      # _bump 가 읽으므로 반드시 먼저 갱신
                     _bump()
                     if last_err is None:
                         self.log(f"  ✅ {tag}")
                     else:
-                        failed += 1
                         if self.stop_event.is_set():
                             # 재시도 도중 중지를 누른 경우 — "3회 실패"가 아니다
                             self.log(f"  ⏹ {tag}: 중지 요청으로 중단")
